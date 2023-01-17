@@ -13,8 +13,9 @@ sysOS <- Sys.info()[['sysname']]
 main <- function() {
   # test database configuration
   # configDB() # Input root argument is empty
-  configDB(root = rootDir)
-  # configDB(root = rootDir) # Database root folder is already exist.
+  # configDB(root = rootDir, path = "out") # Given path in configDB is not exist. Please input a valid path for database
+  # configDB(root = rootDir) # this one work
+  configDB(root = rootDir, path = "myDatabase")
   
   # test genObjPath, assuming input is nothing or valid argument
   # genObjPath() # Error in genObjPath() : Input arguments has empty string
@@ -46,7 +47,7 @@ main <- function() {
   # clearDB() # root is an empty string.
   # clearDB(222) # root is an empty string.
   # clearDB("nowhere") # Clear operation is invalid. Root folder is not exist
-  clearDB(rootDir) # Success!
+  # clearDB(rootDir) # Success!
   
 }
 
@@ -58,6 +59,10 @@ main <- function() {
 #' @return NA
 
 configDB <- function(root = "", path = "") {
+  # check bad cases
+  if (!is.character(root)) stop("root argument shuold be a string.")
+  if (!is.character(path)) stop("path argument shuold be a string.")
+  
   if (nchar(root) <= 0) {
     message("Input root argument is empty")
     return(invisible(NULL))
@@ -70,10 +75,9 @@ configDB <- function(root = "", path = "") {
     message("Database root folder is already exist.")
     # return()
   } else {
-    dir.create(rootPath)
+    if(!dir.create(rootPath)) stop("Given path in configDB is not exist. Please input a valid path for database")
   }
-
-  
+  rootDir <<- rootPath
 }
 
 #' Get the relative path of given tag of an object
@@ -128,9 +132,11 @@ getFileName <- function(fileName = "") {
   if (nchar(fileName) == 0) stop("Input fileName is empty")
   
   # remove all hash tag then remove all spaces before period or after file extension.
+  # the spec doesn't detail that the space between file name and hash symbol should be 
+  # removed or not, e.g., CampusAtNight #Northeastern #ISEC.jpg. Here just remove it.
   res <- str_replace_all(fileName, "#[^\\s\\.]+", "") %>% 
     str_replace(., "\\s+\\.", ".") %>% 
-    str_replace(., "\\s$", "")
+    str_replace(., "\\s+$", "")
   return(res)
 }
 

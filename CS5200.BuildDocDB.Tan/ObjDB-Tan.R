@@ -13,9 +13,12 @@ sysOS <- Sys.info()[['sysname']]
 main <- function() {
   # test database configuration
   # configDB() # Input root argument is empty
+  # configDB(root = "", path = "") # Input root argument is empty
+  # configDB(root = 332, path = "") # Error in configDB(root = 332, path = ""): root argument shuold be a string.
   # configDB(root = rootDir, path = "out") # Given path in configDB is not exist. Please input a valid path for database
-  # configDB(root = rootDir) # this one work
-  configDB(root = rootDir, path = "myDatabase")
+  configDB(root = rootDir) # this one work, create db folder in this project directory
+  # dir.create("myDatabase")
+  # configDB(root = rootDir, path = "myDatabase") # create db folder in this project directory's sub-folder, 
   
   # test genObjPath, assuming input is nothing or valid argument
   # genObjPath() # Error in genObjPath() : Input arguments has empty string
@@ -47,7 +50,7 @@ main <- function() {
   # clearDB() # root is an empty string.
   # clearDB(222) # root is an empty string.
   # clearDB("nowhere") # Clear operation is invalid. Root folder is not exist
-  # clearDB(rootDir) # Success!
+  clearDB(rootDir) # Success!
   
 }
 

@@ -1,0 +1,189 @@
+---
+title: "Tan.CRDB.CS5200"
+author: "Jiaxing Tan"
+date: '2023-02-02'
+output: html_document
+---
+
+```{r}
+library(pacman)
+p_load(RSQLite)
+
+rootDB <- "databases"
+dbfile = "ModuleDB.sqlitedb"
+
+path <- getwd()
+rootPath <- file.path(path, rootDB)
+if (dir.exists(rootPath)) {
+  message("Database root folder is already exist.")
+  # return()
+} else {
+  if(!dir.create(rootPath)) stop("Given path in configDB is not exist. Please input a valid path for database")
+}
+
+conn <- dbConnect(RSQLite::SQLite(), file.path(rootPath, dbfile))
+```
+
+```{sql connection=conn}
+PRAGMA foreign_keys = FALSE
+```
+
+```{sql connection=conn}
+DROP TABLE IF EXISTS affiliation
+```
+
+
+```{sql connection=conn}
+CREATE TABLE IF NOT EXISTS affiliation (
+  aff_id integer primary key,
+  aff_title text not null
+)
+```
+
+```{sql connection=conn}
+INSERT INTO affiliation (aff_id, aff_title)
+VALUES 
+    (1001, "PT"),
+    (1002, "FT"),
+    (2001, "Contract")
+
+```
+
+
+```{sql connection=conn}
+DROP TABLE IF EXISTS author
+```
+
+```{sql connection=conn}
+CREATE TABLE IF NOT EXISTS author (
+  aid integer primary key,
+  name text NOT NULL,
+  email text NOT NULL,
+  affiliation integer,
+  FOREIGN KEY(affiliation) REFERENCES affiliation(aff_id)
+)
+```
+
+```{sql connection=conn}
+INSERT INTO author (aid, name, email, affiliation)
+VALUES 
+    (30, "Jon Snow", "jonsnow@example.com", 1002),
+    (32, "Jaime Lannister", "jlannister@example.com", 1001),
+    (33, "Tyrion Lannister", "tlannister@example.com", 2001),
+    (40, "Arya Stark", "aryastark@example.com", 1002)
+
+```
+
+```{sql connection=conn}
+SELECT * FROM author
+```
+```{sql connection=conn}
+DROP TABLE IF EXISTS module;
+```
+
+
+```{sql connection=conn}
+CREATE TABLE IF NOT EXISTS module (
+  m_number text primary key,
+  title text NOT NULL,
+  length_in_min integer NOT NULL
+)
+```
+
+```{sql connection=conn}
+DROP TABLE IF EXISTS contribution;
+```
+
+
+```{sql connection=conn}
+
+CREATE TABLE IF NOT EXISTS contribution (
+  aid integer,
+  m_number text,
+  FOREIGN KEY(aid) REFERENCES author(aid),
+  FOREIGN KEY(m_number) REFERENCES module(m_number)
+)
+```
+
+Add triggers against module: 
+1. Every time a new module row is inserted, automatically add a new record in contribution table with null in a_id attribute.
+```{sql connection=conn}
+CREATE TRIGGER contribution_after_module_insert 
+   AFTER INSERT ON module
+BEGIN
+	INSERT INTO contribution (m_number)  -- ignore a_id
+	VALUES (NEW.m_number)
+	;
+END
+```
+
+2. Every time a new module row is update, automatically modify all records in contribution table with the new m_number if that is what will be updated.
+```{sql connection=conn}
+CREATE TRIGGER contribution_after_module_update 
+  AFTER UPDATE ON module
+WHEN OLD.m_number <> NEW.m_number
+BEGIN
+  UPDATE contribution
+  SET m_number = NEW.m_number
+  WHERE m_number = OLD.m_number
+	;
+END
+```
+
+3. Every time a module row is deleted, automatically delete all records in contribution table with the m_number.
+```{sql connection=conn}
+CREATE TRIGGER contribution_after_module_delete
+  AFTER DELETE ON module
+
+BEGIN
+  DELETE FROM contribution
+  WHERE m_number = OLD.m_number
+	;
+END
+```
+
+4. Every time the last row of m_number in contribution table is deleted, automatically delete the record in module table with the m_number.
+```{sql connection=conn}
+CREATE TRIGGER module_after_contribution_delete
+  AFTER DELETE ON contribution
+WHEN OLD.m_number not in (
+      SELECT m_number FROM contribution
+      WHERE m_number = OLD.m_number
+    )
+
+BEGIN
+  DELETE FROM module
+  WHERE m_number = OLD.m_number
+	;
+END
+```
+
+Test:
+```{sql connection=conn}
+INSERT INTO module (m_number, title, length_in_min)
+VALUES ('CS5200', 'Database', 1200)
+```
+
+```{sql connection=conn}
+SELECT * FROM contribution
+```
+Then modified the aid
+```{sql connection=conn}
+UPDATE contribution
+SET aid = 30
+WHERE m_number = "CS5200"
+```
+
+
+
+
+```{sql connection=conn}
+SELECT * FROM sqlite_schema
+WHERE type='trigger'
+ORDER BY name;
+```
+
+```{r}
+dbDisconnect(conn)
+```
+

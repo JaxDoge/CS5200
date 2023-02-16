@@ -1,0 +1,80 @@
+---
+title: "Querying Data Frame in R with SQL using sqldf"
+author: "Martin Schedlbauer"
+output:
+  html_document:
+    df_print: paged
+---
+
+## Using SQL with Data Frames
+
+SQL is a universal query language. Its use has expanded to any tabular data and not just relational databases. For example, the **sqldf** package allows you to use SQL to access, process, search, and aggregate data in data frames. The **sqldf** package actually loads the data frame into an in-memory SQLite database.
+
+**sqldf** automates:
+
+* database setup
+* executing CREATE TABLE to build each table
+* importing and exporting to and from the database from a data frame
+* coercing of the returned columns to the appropriate data types
+
+**sqldf** is often used for:
+
+* learning and practicing SQL within R
+* simplified R data frame manipulation if you know SQL
+* as an alternative for manipulating data frames, often much faster as **sqldf** uses SQLite under the hood and is often faster than performing the same manipulations in straight R
+* reading portions of large files into R without reading the entire file 
+
+Besides **sqldf**, the **tidyverse** package also contains numerous functions for processing data frames in a SQL-like manner.
+
+## Simple Example
+
+Data frames are treated like tables in a relational database. You can simply use the name of a data frame in a **sqldf** SQL query. Note that each **sqldf** query returns a data frame -- just like any SQL query returns a table.
+
+```{r}
+#install.packages("sqldf")
+library(sqldf)
+
+# perform SQL queries on the built-in 'iris' data frame
+sqldf("select * from iris limit 5")
+sqldf("select count(*) from iris")
+sqldf("select Species, count(*) from iris group by Species")
+
+# note that each sqldf query actually returns a data frame
+rs <- sqldf("select Species, count(*) as num from iris group by Species")
+mean(rs$num)
+```
+
+## Variables in **sqldf** Queries
+
+You can use R variables as parameters for **sqldf** queries but you need to build a single string using <code>paste0()</code>. Note that in the example below, the _Sepal.Length_ column contains a 'dot', so it must be enclosed in backticks. If not, then you will get a "Column not found" error.
+
+```{r}
+n <- 5
+sqldf(paste0("select count(Species) from iris where `Sepal.Length` < ", n))
+```
+
+## Capture Result Set in Data Frame
+
+```{r}
+rs <- sqldf("select * from iris limit 5")
+head(rs)
+```
+
+
+## Expressly Setting Data Frame
+
+When you get an error that the data frame cannot be found, then enclose the data frame variable in backticks, _e.g._, \`iris\`.
+
+```{r}
+sqldf("select * from `iris` limit 5")
+```
+
+## Import from CSV with SQL
+
+Use read.csv.sql()...
+
+## Resources
+
+[Manipulate R Data Frames Using SQL](https://www.rdocumentation.org/packages/sqldf/versions/0.4-11#:~:text=sqldf%20is%20an%20R%20package%20for%20running%20SQL,supports%20Date%20class%20and%20a%20few%20additional%20functions.)
+[Make R speak SQL with sqldf](https://www.r-bloggers.com/2010/07/make-r-speak-sql-with-sqldf/)
+[read.csv.sql() Documentation](https://www.rdocumentation.org/packages/sqldf/versions/0.4-11/topics/read.csv.sql)

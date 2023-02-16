@@ -1,0 +1,108 @@
+---
+title: "Tan.MediaDBinR"
+author: "Jiaxing Tan"
+date: '2023-02-11'
+output: html_document
+---
+
+```{r}
+library(pacman)
+p_load(RSQLite)
+p_load(sqldf)
+p_load(tidyverse)
+
+dbfile = "MediaDB.db"
+
+conn <- dbConnect(RSQLite::SQLite(),dbfile)
+
+sqlCmd = "SELECT * FROM invoice_items"
+
+rs <- dbGetQuery(conn, sqlCmd)
+```
+
+Add a new column to rs for the item price called ItemPrice that is Quantity times UnitPrice
+```{r}
+rs$ItemPrice <- rs$Quantity * rs$UnitPrice
+
+```
+
+```{r}
+qtl <- quantile(rs$ItemPrice, probs = c(0.1, 0.9))
+```
+
+1. 10% trimmed mean of the item prices
+```{r}
+round(mean(rs$ItemPrice, trim=0.1), 2)
+```
+
+2. (30 pts) Using sqldf, write a SQL query against the data frame rs from the question above that finds the total amount for each invoice (i.e., the sum of the extended prices for the invoice_items in each invoice) and the number of items in the invoice. So, the result set contains rows that each have the invoice ID, the total, and the number of items. We could have done this against the database table as well, but we want to practice using SQL against an in-memory dataframe.
+
+
+```{r}
+sqldf("
+      SELECT InvoiceId, sum(ItemPrice) AS total_amount, count(distinct InvoiceLineId) AS num_items
+      FROM `rs`
+      GROUP BY InvoiceId
+      ")
+```
+
+
+3. (30 pts) Using R and the result from the prior question, create a line chart of the total number of items in an invoice (x axis) versus the total amount of an invoice (i.e., the total paid) (y axis). Add proper axis labels.
+```{r}
+plotDF_1 <- sqldf("
+      WITH t1 AS (
+        SELECT InvoiceId, sum(ItemPrice) as total_amount, count(distinct InvoiceLineId) AS num_items
+        FROM `rs`
+        GROUP BY InvoiceId
+      )
+      
+      SELECT num_items, AVG(total_amount) AS avg_amount
+      FROM t1
+      GROUP BY num_items
+      ")
+
+ggplot(plotDF_1, aes(num_items, avg_amount)) + geom_line() + geom_point(aes(color='red')) +
+  xlab("Invoice item number") +
+  ylab("Average invoice amount") +
+  ggtitle("Average invoice amount v.s. invoice item number")
+
+```
+
+
+4. (15 pts) Write and execute some combination of R code, loops in R, sqldf, dbWriteTable(), direct SQL ALTER and SQL UPDATE statements that applies a 10% discount to the total amount for each invoice if it has more than 10 items and stores that discounted amount in a new column in the invoices table called DiscPrice. If the invoice has 10 or fewer items of the same or of different items, then there is no discount and the DiscPrice is the original price. For example, if an item costs $10 and there are 11 items then the full price is $110 and the discounted price is $99. This cannot be solved fully in sqldf nor fully with just a single UPDATE. You will need to use a combination of techniques and some creativity. Any approach will be acceptable. 
+```{r}
+plotDF <- sqldf("
+      SELECT InvoiceId, sum(ItemPrice) AS total_amount, count(distinct InvoiceLineId) AS num_items
+      FROM `rs`
+      GROUP BY InvoiceId
+      ")
+
+invoiceDF <- dbGetQuery(conn, "SELECT * FROM invoices")
+newInvoice <- inner_join(invoiceDF, plotDF, by = "InvoiceId", keep = FALSE, suffix = c("","y_")) %>% 
+  select(., -total_amount) %>% 
+  mutate(DiscPrice = case_when(
+    num_items > 10 ~ Total * 0.9,
+    TRUE ~ Total
+  )) %>% 
+  select(., -num_items)
+```
+
+```{r}
+if (dbExistsTable(conn, "invoices") == TRUE) {
+  dbRemoveTable(conn, "invoices")  
+}
+dbWriteTable(conn, "invoices", newInvoice)
+
+```
+
+5. Display new invoices table
+```{r}
+dbReadTable(conn, "invoices")
+```
+
+
+
+```{r}
+dbDisconnect(conn, )
+```
+

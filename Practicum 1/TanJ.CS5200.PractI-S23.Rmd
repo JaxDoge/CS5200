@@ -1,0 +1,324 @@
+---
+title: "Practicum I CS5200"
+author: "Jiaxing Tan"
+date: 'Spring 2023'
+output: html_document
+---
+
+## Connect to the AWS RDS Database
+```{r loadAllrequirements, warning=FALSE}
+# install.packages("pacman")
+library(pacman)
+p_load(RMySQL, quietly=T)
+p_load(tidyverse)
+p_load(lubridate)
+```
+
+```{r connectToAWSRDSMySQLDatabase}
+# Obviously not a good practice to exposure my credential, only for pedagogical purpose
+db_user <- '***REMOVED***' 
+db_password <- '***REMOVED***'
+db_name <- '***REMOVED***'
+db_host <- '***REMOVED***'
+db_port <- ***REMOVED***
+
+mySQLConn <-  dbConnect(RMySQL::MySQL(), 
+                      user = db_user, 
+                      password = db_password,
+                      dbname = db_name, 
+                      host = db_host, 
+                      port = db_port)
+```
+
+## Create Database
+
+A. (5 pts / 0.5 hrs) Create a table incidents that stores wildlife strike incidents with this schema:
+```{sql DropIncidents, connection=mySQLConn}
+DROP TABLE IF EXISTS incidents
+```
+
+Because this is the first table, I will add foreign key constrains later.
+```{sql CreateIncidents, connection=mySQLConn}
+CREATE TABLE IF NOT EXISTS incidents (
+    rid INTEGER NOT NULL AUTO_INCREMENT,
+    `dep.date` DATE, 
+    origin INTEGER, 
+    airline INTEGER,
+    aircraft VARCHAR(64), 
+    `flight.phase` VARCHAR(32),
+    altitude INTEGER, 
+    conditions VARCHAR(64),
+    warned BOOLEAN,
+    PRIMARY KEY (rid),
+    CONSTRAINT CHK_incident CHECK (`flight.phase` in ("takeoff", "landing", "inflight", "unknown") AND altitude > 0)
+)
+```
+
+B. (5 pts / 0.5 hrs) Create a table that stores airports and states called airports and that follows this schema:
+```{sql DropAirports,connection=mySQLConn}
+DROP TABLE IF EXISTS airports
+```
+
+```{sql CreateAirports,connection=mySQLConn}
+CREATE TABLE IF NOT EXISTS airports (
+    aid INTEGER NOT NULL AUTO_INCREMENT,
+    airportName VARCHAR(64) NOT NULL,
+    airportCode VARCHAR(16),
+    state VARCHAR(64) NOT NULL,
+    PRIMARY KEY (aid)
+)
+```
+
+C. (5 pts / 0.3 hrs) Link the incidents and airports tables via the origin foreign key in incidents to the primary key aid in airports.
+```{sql CreateFKOriginOnIncidents, connection=mySQLConn}
+ALTER TABLE incidents
+ADD FOREIGN KEY (origin) REFERENCES airports(aid)
+```
+
+D. (5 pts / 0.5 hrs) Create a lookup table called conditions
+```{sql DropConditions, connection=mySQLConn}
+DROP TABLE IF EXISTS conditions
+```
+
+```{sql CreateConditions, connection=mySQLConn}
+CREATE TABLE IF NOT EXISTS conditions (
+    cid INTEGER NOT NULL AUTO_INCREMENT,
+    `condition` VARCHAR(64) UNIQUE NOT NULL,
+    explanation VARCHAR(128),
+    PRIMARY KEY (cid)
+)
+```
+
+Change the data type of conditions in table "incidents"
+```{sql ChangeConditionsFromTextToInteger, connection=mySQLConn}
+ALTER TABLE incidents
+MODIFY conditions INTEGER
+```
+
+Link this lookup table to the incidents table through the conditions foreign key. 
+```{sql CreateFKConditionsOnIncidents, connection=mySQLConn}
+ALTER TABLE incidents
+ADD FOREIGN KEY (conditions) REFERENCES conditions(cid)
+```
+
+E. (5 pts / 0.5 hrs) Create a table that stores airlines called airlines and that follows this schema.
+```{sql DropAirlines, connection=mySQLConn}
+DROP TABLE IF EXISTS airlines
+```
+
+```{sql CreateAirlines, connection=mySQLConn}
+CREATE TABLE IF NOT EXISTS airlines (
+    eid INTEGER NOT NULL AUTO_INCREMENT,
+    airlineName VARCHAR(32) NOT NULL,
+    airlineCode VARCHAR(8),
+    flag VARCHAR(16),
+    PRIMARY KEY (eid)
+)
+```
+
+F. (3 pts / 0.3 hrs) Link the incidents and airlines tables via the airline foreign key in incidents to the primary key eid in airlines.
+```{sql CreateFKAirlineOnIncidents, connection=mySQLConn}
+ALTER TABLE incidents
+ADD FOREIGN KEY (airline) REFERENCES airlines(eid)
+```
+
+G. Test
+```{sql IncidentsFKConstrains, connection=mySQLConn, eval = FALSE}
+SELECT
+  TABLE_NAME,COLUMN_NAME,CONSTRAINT_NAME, REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME
+FROM
+  INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+WHERE TABLE_NAME = 'incidents'
+```
+
+
+## Check the BirdStrikesData
+```{r Check the structure of orginal dataset, warning=FALSE}
+df_raw <- read.csv(file = "BirdStrikesData-V2.csv",
+                   header = T,
+                   stringsAsFactors = F,
+                   nrows = 1000)
+
+```
+
+## Populate database with source data file 
+
+1. Preprocess the raw dataframe:
+  a. select required columns
+  b. convert all NULL value, empty value into "unknown" or "1/1/1990 0:00" or "Airplane" or "Take-off run" or "N"
+  c. convert data type of altitude for char to numeric.
+  d. transfer flight phase to what we wanted
+  e. convert date to Date data type
+  f. convert warned data type to Boolean.
+```{r preprocessing, warning=FALSE}
+df_refine <- df_raw %>% 
+  rename(., rid = ï..rid) %>%
+  rename(., dep.date = flight_date) %>% 
+  rename(., flight.phase = flight_phase) %>% 
+  rename(., altitude = altitude_ft) %>% 
+  rename(., conditions = sky_conditions) %>% 
+  rename(., warned = pilot_warned_flag) %>% 
+  select(., rid, dep.date, airline, aircraft, airport, flight.phase, origin, altitude, conditions, warned) %>% 
+  as_tibble(.) %>% 
+  mutate_at(., c("airline", "airport", "origin"), ~na_if(., '')) %>% 
+  mutate_at(., c("airline", "airport", "origin"), ~replace_na(., "UNKNOWN")) %>% 
+  mutate_at(., c("dep.date"), ~na_if(., '')) %>% 
+  mutate_at(., c("dep.date"), ~replace_na(., "1/1/1990 0:00")) %>% 
+  mutate_at(., c("aircraft"), ~na_if(., '')) %>% 
+  mutate_at(., c("aircraft"), ~replace_na(., "Airplane")) %>%
+  mutate_at(., c("flight.phase"), ~na_if(., '')) %>% 
+  mutate_at(., c("flight.phase"), ~replace_na(., "Take-off run")) %>% 
+  mutate_at(., c("warned"), ~na_if(., '')) %>% 
+  mutate_at(., c("warned"), ~replace_na(., "N")) %>% 
+  mutate_at(., c("altitude"), str_replace_all, 
+            pattern = ",", 
+            replacement = "") %>% 
+  mutate_at(., c("altitude"), as.numeric) %>% 
+  mutate(., flight.phase = case_when(
+                                  flight.phase == "Take-off run" ~ "takeoff",
+                                  flight.phase == "Landing Roll" | flight.phase == "Approach" ~ "landing",
+                                  flight.phase == "Climb" | flight.phase == "Descent" ~ "inflight",
+                                  TRUE ~ "unknown"
+                                  )) %>% 
+  mutate_at(., "dep.date", fast_strptime, format = "%m/%d/%Y %H:%M", lt = FALSE) %>% 
+  mutate(., warned = case_when(
+                              warned == "Y" ~ 1,
+                              warned == "N" ~ 0,
+                              TRUE ~ 0))  # RMySQL has a bug that take all logical to 0
+```
+
+
+2. Populate table "airlines"
+```{r CreateLocalAirlines, warning=FALSE}
+airlinesLC <- df_refine %>% group_by(., airline) %>% 
+  summarise(.) %>% 
+  rownames_to_column(.) %>% 
+  mutate(airlinecode = NA) %>% 
+  mutate(flag = NA) %>% 
+  rename(., airlinename = airline) %>% 
+  rename(., eid = rowname)
+```
+
+```{r WriteAirlines, warning=FALSE}
+dbWriteTable(mySQLConn, "airlines", airlinesLC, overwrite = FALSE, 
+             append = TRUE, row.names = FALSE)
+```
+
+
+3. Populate table "conditions"
+```{r CreateLocalConditions, warning=FALSE}
+conditions <- df_refine %>% group_by(., conditions) %>% 
+  summarise(.) %>% 
+  rownames_to_column(.) %>% 
+  mutate(explanation = NA) %>% 
+  rename(., cid = rowname) %>% 
+  rename(., condition = conditions)
+```
+
+```{r WriteConditions, warning=FALSE}
+dbWriteTable(mySQLConn, "conditions", conditions, overwrite = FALSE, 
+             append = TRUE, row.names = FALSE)
+```
+
+
+4. Populate table "airports"
+```{r CreateLocalAirports, warning=FALSE}
+airports <- df_refine %>% group_by(., airport, origin) %>% 
+  summarise(.) %>% 
+  rownames_to_column(.) %>% 
+  mutate(airportcode = NA, .after = airport) %>% 
+  rename(., airportname = airport) %>% 
+  rename(., state = origin) %>% 
+  rename(., aid = rowname)
+```
+
+```{r WriteAirports, warning=FALSE}
+dbWriteTable(mySQLConn, "airports", airports, overwrite = FALSE, 
+             append = TRUE, row.names = FALSE)
+```
+
+
+5. Populate table "incidents"
+Rename several columns for the convenience of later join strategy.
+```{r CreateLocalIncidentsAndRenaming, warning=FALSE}
+incidents <- df_refine %>% 
+  rename(state = origin) %>% 
+  rename(airline_src = airline) %>% 
+  rename(conditions_src = conditions)
+```
+
+Match aid from table 'airports' into a new column origin.
+```{r CreateColumnOrigin, warning=FALSE}
+incidents <- incidents %>% 
+  left_join(., airports, by = c("airport" = "airportname", "state"), keep = FALSE) %>% 
+  select(., -airportcode) %>% 
+  rename(origin = aid)
+```
+
+Match eid from table 'airlines' into a new column airline.
+```{r CreateColumnAirline, warning=FALSE}
+incidents <- incidents %>% 
+  left_join(., airlinesLC, by = c("airline_src" = "airlinename"), keep = FALSE) %>% 
+  select(., -airlinecode, -flag) %>% 
+  rename(airline = eid)
+```
+
+Match cid from table 'conditions' into a new column 'conditions'
+```{r CreateColumnConditions, warning=FALSE}
+incidents <- incidents %>% 
+  left_join(., conditions, by = c("conditions_src" = "condition"), keep = FALSE) %>% 
+  select(., -explanation) %>% 
+  rename(conditions = cid)
+```
+
+Select required columns in the right order
+```{r FinalShuffleIncidents, warning=FALSE}
+incidents <- incidents %>% select(rid, dep.date, origin, airline, aircraft, flight.phase, altitude, conditions, warned)
+```
+
+Write into MySQL table
+```{r WriteIncidents, warning=FALSE}
+dbWriteTable(mySQLConn, "incidents", incidents, overwrite = FALSE, 
+             append = TRUE, row.names = FALSE)
+```
+
+## Show parts of each table
+1. airlines
+```{sql ShowAirlines, connection=mySQLConn}
+SELECT *
+FROM `airlines`
+ORDER BY rand()
+LIMIT 5
+```
+
+2. airports
+```{sql ShowAirports, connection=mySQLConn}
+SELECT *
+FROM `airports`
+ORDER BY rand()
+LIMIT 5
+```
+
+3. conditions
+```{sql ShowAirports, connection=mySQLConn}
+SELECT *
+FROM `airports`
+ORDER BY rand()
+LIMIT 5
+```
+
+4. incidents
+```{sql Showincidents, connection=mySQLConn}
+SELECT *
+FROM `incidents`
+ORDER BY rand()
+LIMIT 5
+```
+
+
+
+## Disconnect from Database
+```{r disconnectedFromRDS}
+dbDisconnect(mySQLConn)
+```
+

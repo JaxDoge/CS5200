@@ -25,7 +25,7 @@ conn <- dbConnect(RSQLite::SQLite(), file.path(rootPath, dbfile))
 ```
 
 ```{sql connection=conn}
-PRAGMA foreign_keys = FALSE
+PRAGMA foreign_keys = TRUE
 ```
 
 ```{sql connection=conn}
@@ -101,17 +101,18 @@ CREATE TABLE IF NOT EXISTS contribution (
   aid integer,
   m_number text,
   FOREIGN KEY(aid) REFERENCES author(aid),
-  FOREIGN KEY(m_number) REFERENCES module(m_number)
+  FOREIGN KEY(m_number) REFERENCES module(m_number),
+  PRIMARY KEY (aid, m_number)
 )
 ```
 
-Add triggers against module: 
-1. Every time a new module row is inserted, automatically add a new record in contribution table with null in a_id attribute.
+Add triggers against module to ensure the mandatory more than zero multiplicity: 
+1. Every time a new module row is inserted, automatically add a new record in contribution table with null in aid attribute.
 ```{sql connection=conn}
-CREATE TRIGGER contribution_after_module_insert 
+CREATE TRIGGER IF NOT EXISTS contribution_after_module_insert 
    AFTER INSERT ON module
 BEGIN
-	INSERT INTO contribution (m_number)  -- ignore a_id
+	INSERT INTO contribution (m_number)  -- ignore aid
 	VALUES (NEW.m_number)
 	;
 END
@@ -119,7 +120,7 @@ END
 
 2. Every time a new module row is update, automatically modify all records in contribution table with the new m_number if that is what will be updated.
 ```{sql connection=conn}
-CREATE TRIGGER contribution_after_module_update 
+CREATE TRIGGER IF NOT EXISTS contribution_after_module_update 
   AFTER UPDATE ON module
 WHEN OLD.m_number <> NEW.m_number
 BEGIN
@@ -131,8 +132,9 @@ END
 ```
 
 3. Every time a module row is deleted, automatically delete all records in contribution table with the m_number.
+Not pretty necessary because of the existed FK constrain.
 ```{sql connection=conn}
-CREATE TRIGGER contribution_after_module_delete
+CREATE TRIGGER IF NOT EXISTS contribution_after_module_delete
   AFTER DELETE ON module
 
 BEGIN
@@ -144,7 +146,7 @@ END
 
 4. Every time the last row of m_number in contribution table is deleted, automatically delete the record in module table with the m_number.
 ```{sql connection=conn}
-CREATE TRIGGER module_after_contribution_delete
+CREATE TRIGGER IF NOT EXISTS module_after_contribution_delete
   AFTER DELETE ON contribution
 WHEN OLD.m_number not in (
       SELECT m_number FROM contribution
@@ -158,7 +160,24 @@ BEGIN
 END
 ```
 
-Test:
+5. New trigger of assignment: DO: Build Triggers.
+Check the email address of new row inserted to author table. If input is invalid, throw an error with message.
+```{sql connection=conn}
+CREATE TRIGGER IF NOT EXISTS validate_email_before_insert_author 
+   BEFORE INSERT ON author
+   
+BEGIN
+   SELECT
+      CASE
+	      WHEN NEW.email NOT LIKE '%_@_%.__%' 
+	      THEN RAISE (ABORT,'Invalid email address of new author')
+       END;
+END;
+```
+
+
+Test all triggers:
+1. 
 ```{sql connection=conn}
 INSERT INTO module (m_number, title, length_in_min)
 VALUES ('CS5200', 'Database', 1200)
@@ -174,9 +193,93 @@ SET aid = 30
 WHERE m_number = "CS5200"
 ```
 
+2.
+```{sql connection=conn}
+INSERT INTO module (m_number, title, length_in_min)
+VALUES ('CS5801', 'Algorithm', 1600)
+```
+
+```{sql connection=conn}
+UPDATE contribution
+SET aid = 32
+WHERE m_number = "CS5801"
+```
+
+```{sql connection=conn}
+INSERT INTO contribution (aid, m_number)
+VALUES (33, "CS5801")
+```
+
+```{sql connection=conn}
+SELECT * FROM contribution
+```
+
+Update a m_number in module table.
+```{sql connection=conn}
+UPDATE module
+SET m_number = "CS5800"
+WHERE m_number = "CS5801"
+```
+
+```{sql connection=conn}
+SELECT * FROM contribution
+```
+
+3. 
+```{sql connection=conn}
+DELETE FROM module
+WHERE m_number = "CS5800"
+```
+
+```{sql connection=conn}
+SELECT * FROM contribution
+```
+
+4. 
+```{sql connection=conn}
+INSERT INTO module (m_number, title, length_in_min)
+VALUES ('CS5010', 'OOP', 800)
+```
+
+```{sql connection=conn}
+UPDATE contribution
+SET aid = 40
+WHERE m_number = "CS5010"
+```
+
+```{sql connection=conn}
+SELECT * FROM module
+```
+
+```{sql connection=conn}
+SELECT * FROM contribution
+```
+
+```{sql connection=conn}
+DELETE FROM contribution
+WHERE m_number = "CS5200"
+```
+
+```{sql connection=conn}
+SELECT * FROM module
+```
+
+5. 
+```{sql connection=conn}
+INSERT INTO author (aid, name, email, affiliation)
+VALUES 
+    (31, "Daenerys Targaryen", "HOW DARE YOU?", 1002)
+
+```
+
+Mother of dragon is not here.
+```{sql connection=conn}
+SELECT *
+FROM author
+```
 
 
-
+Miscellaneous..
 ```{sql connection=conn}
 SELECT * FROM sqlite_schema
 WHERE type='trigger'

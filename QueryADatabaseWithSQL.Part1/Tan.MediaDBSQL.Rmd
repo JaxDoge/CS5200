@@ -1,0 +1,196 @@
+---
+title: "Tan.Query a Database with SQL"
+author: "Jiaxing Tan"
+date: '2023-02-10'
+output: html_document
+---
+
+```{r}
+library(pacman)
+p_load(RSQLite)
+
+dbfile = "MediaDB.db"
+
+conn <- dbConnect(RSQLite::SQLite(),dbfile)
+```
+
+1. (5 pts) What are the last name, city, state, and country of all customers who made at least one purchase and live either in Brazil or Canada? Do not list duplicates.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT lastname, city, state, country, customerid
+  FROM customers 
+  WHERE Country in ("Brazil", "Canada")
+)
+,t2 AS (
+  SELECT customerid
+  FROM invoices
+  GROUP BY CustomerId
+)
+
+SELECT lastname, city, state, country
+FROM t1
+JOIN t2
+ON t1.customerid = t2.customerid
+```
+
+2. (5 pts) What are the titles of each album and the number of tracks on each album? 
+```{sql connection=conn}
+SELECT t1.AlbumId, max(t1.Title) as title, count(distinct t2.TrackId) as num_tracks
+FROM albums t1
+LEFT JOIN tracks t2
+ON t1.AlbumId = t2.AlbumId
+GROUP BY t1.AlbumId
+ORDER BY num_tracks DESC
+```
+
+3. (5 pts) List the number of tracks by genre, ordered from most to least, restricted to those genres for which there are at least five tracks.
+```{sql connection=conn}
+SELECT t2.GenreId, t2.Name as genre_name, count(*) as num_tracks
+FROM tracks t1
+JOIN genres t2
+ON t1.GenreId = t2.GenreId
+GROUP BY t2.GenreId, t2.Name
+HAVING count(*) >= 5
+ORDER BY num_tracks DESC
+```
+
+
+4. (10 pts) What is the average "tenure" of the employees in months, i.e., the time they have been working at our store? Use SQL to round the result to zero digit of precision, e.g., 23 instead of 23.4. Hint: SQLite does not support DATEDIFF but does support STRFTIME (see tutorial Links to an external site.). You need to only take year and month into account.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT 
+    strftime('%d', HireDate) AS Day,
+    strftime('%m', HireDate) AS Month,
+    strftime('%Y', HireDate) AS Year
+  FROM employees
+)
+
+SELECT round(AVG( 
+            (strftime('%Y', DATE('now')) - Year) * 12 + ( strftime('%m', DATE('now')) - Month)
+            ), 0) as avg_tenure_months
+FROM t1
+```
+
+5. (10 pts) What are the total number of unique customers for each Brazilian state (e.g., MG, SP, etc.), ordered alphabetically by state, who made at least one purchase (i.e., do not consider customers who never made a purchase)?
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT lastname, city, state, country, customerid
+  FROM customers 
+  WHERE Country = "Brazil"
+)
+,t2 AS (
+  SELECT customerid
+  FROM invoices
+  GROUP BY CustomerId
+)
+
+SELECT state, count(distinct t1.customerid) as num_cust
+FROM t1 
+JOIN t2
+ON t1.customerid = t2.customerid
+GROUP BY state
+ORDER BY state ASC
+
+```
+
+
+
+6. (10 pts) How many customers never made a purchase, i.e., they appear in the customers table but not in the invoices table.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT lastname, city, state, country, customerid
+  FROM customers 
+)
+,t2 AS (
+  SELECT customerid
+  FROM invoices
+  GROUP BY CustomerId
+)
+
+
+SELECT count(distinct t1.customerid) as num_no_purchase_cust
+FROM t1 
+LEFT JOIN t2
+ON t1.customerid = t2.customerid
+WHERE t2.customerid IS NULL
+```
+
+7. (10 pts) How many albums contain the substring "symphony" in the album title?
+```{sql connection=conn}
+SELECT count(1) as ans
+FROM albums
+WHERE Title like '%symphony%'
+```
+
+8. (15 pts) What is the total "time" of all tracks per artist in hours, i.e., add up the "Milliseconds" column in tracks? Display the artist's name and the time in hours rounded to two decimals. Only consider artists who published at least one track.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT t1a.AlbumId, t1b.Name, t1a.ArtistId
+  FROM albums t1a
+  JOIN artists t1b
+  ON t1a.ArtistId = t1b.ArtistId
+)
+,t2 AS (
+  SELECT ArtistId, t1.Name, t2a.Milliseconds
+  FROM t1
+  JOIN tracks t2a
+  ON t1.AlbumId = t2a.AlbumId
+)
+
+SELECT ArtistId, name as artist_name, round(sum(Milliseconds * 1.0) / 3600000, 2) as totalhrs
+FROM t2
+GROUP BY ArtistId, Name
+```
+
+9. (15 pts) Which playlists are the longest (greater than 0), regardless of type and format? List the playlist name(s) and the time in two columns: one for hours and one for minutes.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT t1a.TrackId, t1a.Milliseconds, t1b.PlaylistId
+  FROM tracks t1a
+  JOIN playlist_track t1b
+  ON t1a.TrackId = t1b.TrackId
+)
+,t2 AS (
+  SELECT trackid, milliseconds, t2a.PlaylistId, t2a.Name
+  FROM t1
+  JOIN playlists t2a
+  ON t1.playlistid = t2a.PlaylistId
+)
+,t3 AS (
+  SELECT PlaylistId, name, floor(sum(Milliseconds * 1.0) / 3600000) as totaltime_hr, sum(Milliseconds * 1.0) / 3600000 as totaltime 
+  FROM t2
+  GROUP BY PlaylistId, name
+)
+
+SELECT PlaylistId, name as playlist_name, totaltime_hr, floor((totaltime - totaltime_hr) * 60) as totaltime_min
+FROM t3
+WHERE totaltime = (SELECT max(totaltime) FROM t3)
+```
+
+
+10. (15 pts) Which artists have composed tracks in more than three different genres? List the artists name and the number of distinct genres they have compositions in. Do not list duplicates.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT t1a.AlbumId, t1b.Name as artist_name, t1a.ArtistId
+  FROM albums t1a
+  JOIN artists t1b
+  ON t1a.ArtistId = t1b.ArtistId
+)
+,t2 AS (
+  SELECT ArtistId, t1.artist_name, t2a.TrackId, t2a.GenreId
+  FROM t1
+  JOIN tracks t2a
+  ON t1.AlbumId = t2a.AlbumId
+)
+
+SELECT ArtistId, artist_name, count(distinct genreid) as gener_tally
+FROM t2
+GROUP BY ArtistId, artist_name
+HAVING count(distinct genreid) >= 3
+```
+
+
+
+```{r}
+dbDisconnect(conn)
+```

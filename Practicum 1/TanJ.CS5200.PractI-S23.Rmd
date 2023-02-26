@@ -318,7 +318,225 @@ LIMIT 5
 
 ## Create several SQLs against MySQL database
 
+#### Create a SQL query against your database to find the 10 states with the greatest number of incidents.
 
+#### Create a SQL query against your database to find the airlines that had an above average number bird strike incidents.
+```{sql Q9, connection=mySQLConn}
+WITH t1 AS (
+  SELECT airline, count(1) as inci_tally
+  FROM `incidents`
+  GROUP BY airline
+),
+t2 AS (
+  SELECT airline, inci_tally, AVG(inci_tally) over() as avg_inci_tally
+  FROM t1
+),
+t3 AS (
+  SELECT airline, inci_tally, avg_inci_tally
+  FROM t2
+  WHERE inci_tally > avg_inci_tally
+)
+
+SELECT t4.airlineName, t3.inci_tally, t3.avg_inci_tally
+FROM t3
+JOIN `airlines` t4
+ON t3.airline = t4.eid
+```
+
+#### 10
+#### 11
+
+#### 12 Create a stored procedure in MySQL that adds a new incident to the database.
+```{sql DropInsertIncidentsProcedure, connection=mySQLConn}
+DROP PROCEDURE IF EXISTS insert_incident_sp
+```
+
+```{sql CreateInsertIncidentsProcedure, connection=mySQLConn}
+CREATE PROCEDURE insert_incident_sp (
+    IN `new_dep.date` DATE,
+    -- IN new_origin INTEGER,
+    IN new_airportname VARCHAR(64),
+    IN new_state VARCHAR(64),
+    -- IN airline INTEGER,
+    IN new_airlinename VARCHAR(64),
+    IN new_aircraft VARCHAR(64),
+    IN `new_flight.phase` VARCHAR(32),
+    IN new_altitude INTEGER,
+    -- IN new_conditions INTEGER,
+    IN new_conditionname VARCHAR(64),
+    IN new_warned BOOLEAN
+)
+  BEGIN
+    -- Check if origin exists in airports
+    -- If exist, check state and airport name info
+    -- Or insert a new row into table airports
+    SELECT
+  	aid
+    INTO @aidflag
+    FROM airports
+    WHERE airportName = new_airportname;
+  
+    SELECT airportName
+    INTO @pAirportName
+    FROM airports
+    WHERE airportName = new_airportname;
+  
+    SELECT state
+    INTO @pState
+    FROM airports
+    WHERE airportName = new_airportname;
+  
+    -- Insert new record into airports or popup an error message
+    IF (@aidflag is not null AND @pAirportName is not null AND @pState = new_state) THEN SELECT 1 WHERE FALSE; -- do nothing
+    ELSEIF (@aidflag is not null AND @pAirportName is not null ) THEN SIGNAL sqlstate '02000'
+              SET MESSAGE_TEXT = 'State values are not matched whereas airport name is found';
+    ELSEIF @aidflag is null THEN
+      INSERT INTO airports (airportName, state) VALUES (new_airportname, new_state);  -- Create new airport
+      select aid into @aidflag from airports where airportName = new_airportname;  -- record new aid
+    ELSE SIGNAL sqlstate '03000' SET MESSAGE_TEXT = 'Impossible case risen when checking airport foreign key';
+    END IF;
+  
+    -- Check eid existence
+    -- Check airline name info
+    -- Insert new record if necessary
+  
+    SELECT
+  	eid
+    INTO @eidflag
+    FROM airlines
+    WHERE airlineName = new_airlinename;
+  
+    SELECT airlineName
+    INTO @pAirlineName
+    FROM airlines
+    WHERE airlineName = new_airlinename;
+  
+      -- Insert new record into airports or popup an error message
+    IF (@eidflag is not null AND @pAirlineName is not null) THEN SELECT 1 WHERE FALSE; -- do nothing
+    ELSEIF @eidflag is null THEN
+      INSERT INTO airlines (airlineName) VALUES (new_airlinename);  -- Create new airline
+      select eid into @eidflag from airlines where airlineName = new_airlinename;  -- Record new eid
+    ELSE SIGNAL sqlstate '03000' SET MESSAGE_TEXT = 'Impossible case risen when checking airlines foreign key';
+    END IF;
+  
+    -- Check cid existence
+    -- Check condition column info
+    -- Insert new record if necessary
+    SELECT
+  	cid
+    INTO @cidflag
+    FROM conditions
+    WHERE `condition` = new_conditionname;
+  
+    SELECT
+  	`condition`
+    INTO @condi
+    FROM conditions
+    WHERE `condition` = new_conditionname;
+  
+      -- Insert new record into airports or popup an error message
+    IF (@cidflag is not null AND @condi is not null) THEN SELECT 1 WHERE FALSE; -- do nothing
+    ELSEIF @cidflag is null THEN
+      INSERT INTO conditions (`condition`) VALUES (new_conditionname);  -- Create new condition
+      select cid into @cidflag from conditions where `condition` = new_conditionname;  -- Record new eid
+    ELSE SIGNAL sqlstate '03000' SET MESSAGE_TEXT = 'Impossible case risen when checking condition foreign key';
+    END IF;
+  
+    -- Insert new row into incidents table
+    INSERT INTO incidents (`dep.date`, origin, airline, aircraft, `flight.phase`, altitude, conditions, warned)
+        VALUES (`new_dep.date`, @aidflag, @eidflag, new_aircraft, `new_flight.phase`, new_altitude, @cidflag, new_warned);
+  
+  
+    SET @aidflag = NULL;
+    SET @pAirlineName = NULL;
+    SET @pState = NULL;
+    SET @eidflag = NULL;
+    SET @pAirlineName = NULL;
+    SET @cidflag = NULL;
+    SET @condi = NULL;
+  
+  END
+```
+
+Test case
+```{r NormalInsert, warning=FALSE}
+sqlStatement = "
+  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'Texas'
+    ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'No Cloud', 1)
+"
+
+rs = dbSendQuery(mySQLConn, sqlStatement)
+
+# loop through any additional result sets and discard
+while(dbMoreResults(mySQLConn) == TRUE) {
+  dbNextResult(mySQLConn)    
+}
+```
+
+```{r NewAirport, warning=FALSE}
+sqlStatement = "
+  CALL insert_incident_sp('2000-10-17', 'JAX', 'California'
+    ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'No Cloud', 1)
+"
+
+rs = dbSendQuery(mySQLConn, sqlStatement)
+
+# loop through any additional result sets and discard
+while(dbMoreResults(mySQLConn) == TRUE) {
+  dbNextResult(mySQLConn)
+}
+```
+
+```{r exist_airport_but_incorrect_state, warning=FALSE}
+# Error message expected
+sqlStatement = "
+  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'California'
+    ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'No Cloud', 1)
+"
+
+rs = tryCatch(
+  {dbSendQuery(mySQLConn, sqlStatement)}
+  ,error=function(cond) {
+            message(cond)
+            return(NA)
+        })
+
+# loop through any additional result sets and discard
+while(dbMoreResults(mySQLConn) == TRUE) {
+  dbNextResult(mySQLConn)
+}
+```
+
+```{r NewAirline, warning=FALSE}
+sqlStatement = "
+  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'Texas'
+    ,'STARSHIP', 'Airplane', 'landing', 200, 'No Cloud', 1)
+"
+rs = dbSendQuery(mySQLConn, sqlStatement)
+
+# loop through any additional result sets and discard
+while(dbMoreResults(mySQLConn) == TRUE) {
+  dbNextResult(mySQLConn)
+}
+```
+
+```{r NewCondition, warning=FALSE}
+sqlStatement = "
+  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'Texas'
+      ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'Hurricane', 1)
+"
+rs = dbSendQuery(mySQLConn, sqlStatement)
+
+# loop through any additional result sets and discard
+while(dbMoreResults(mySQLConn) == TRUE) {
+  dbNextResult(mySQLConn)
+}
+```
+
+Note that there are new origin, new airline and new condition in the result.
+```{sql CheckResult, connection=mySQLConn}
+SELECT * FROM incidents where `dep.date` = '2000-10-17'
+```
 
 ## Disconnect from Database
 ```{r disconnectedFromRDS}

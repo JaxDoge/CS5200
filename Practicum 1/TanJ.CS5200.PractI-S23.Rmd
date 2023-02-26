@@ -15,12 +15,13 @@ p_load(lubridate)
 ```
 
 ```{r connectToAWSRDSMySQLDatabase}
+db_cred <- yaml::read_yaml('dbconfig.yml')
 # Obviously not a good practice to exposure my credential, only for pedagogical purpose
-db_user <- '***REMOVED***' 
-db_password <- '***REMOVED***'
-db_name <- '***REMOVED***'
-db_host <- '***REMOVED***'
-db_port <- ***REMOVED***
+db_user <- db_cred$db_user
+db_password <- db_cred$db_password
+db_name <- db_cred$db_name
+db_host <- db_cred$db_host
+db_port <- db_cred$db_port
 
 mySQLConn <-  dbConnect(RMySQL::MySQL(), 
                       user = db_user, 
@@ -314,6 +315,8 @@ FROM `incidents`
 ORDER BY rand()
 LIMIT 5
 ```
+
+## Create several SQLs against MySQL database
 
 
 

@@ -1,6 +1,6 @@
 ---
 title: "Practicum I CS5200"
-author: "Jiaxing Tan"
+author: "Jiaxing Tan, Haoping Lin"
 date: 'Spring 2023'
 output: html_document
 ---
@@ -137,8 +137,7 @@ WHERE TABLE_NAME = 'incidents'
 ```{r Check the structure of orginal dataset, warning=FALSE}
 df_raw <- read.csv(file = "BirdStrikesData-V2.csv",
                    header = T,
-                   stringsAsFactors = F,
-                   nrows = 1000)
+                   stringsAsFactors = F)
 
 ```
 
@@ -319,6 +318,16 @@ LIMIT 5
 ## Create several SQLs against MySQL database
 
 #### Create a SQL query against your database to find the 10 states with the greatest number of incidents.
+```{sql Q8, connection=mySQLConn}
+SELECT a.state, count(*) as `number` 
+FROM incidents i
+JOIN airports a 
+ON i.origin = a.aid
+GROUP BY a.state
+ORDER BY `number` DESC
+LIMIT 10
+```
+
 
 #### Create a SQL query against your database to find the airlines that had an above average number bird strike incidents.
 ```{sql Q9, connection=mySQLConn}
@@ -343,8 +352,32 @@ JOIN `airlines` t4
 ON t3.airline = t4.eid
 ```
 
-#### 10
-#### 11
+#### 10 Create a SQL query against your database to find the number of bird strike incidents by month and by flight phase (across all years).
+```{r Q10, warning=FALSE}
+sqlStatement <- "
+
+select month(i.`dep.date`) as month, i.`flight.phase`, count(*) as number 
+from incidents i
+group by month(i.`dep.date`), i.`flight.phase`
+order by month(i.`dep.date`)
+"
+
+bs = dbGetQuery(mySQLConn, sqlStatement)
+head(bs, 6)
+```
+
+#### 11 Plot
+```{r Q11, warning=FALSE}
+bs.mod <- bs %>%  
+  group_by(month) %>%  
+  summarise(number = sum(number))
+ggplot(bs.mod, aes(x=month, y=number)) +  
+  geom_point() +  
+  ggtitle("Number of Incidents by Months") +  
+  xlab("Months") +  ylab("Num of Incidents") +  
+  scale_x_continuous(limits = c(1, 12), breaks = c(1,2,3,4,5,6,7,8,9,10,11,12))
+```
+
 
 #### 12 Create a stored procedure in MySQL that adds a new incident to the database.
 ```{sql DropInsertIncidentsProcedure, connection=mySQLConn}
@@ -461,7 +494,7 @@ CREATE PROCEDURE insert_incident_sp (
 Test case
 ```{r NormalInsert, warning=FALSE}
 sqlStatement = "
-  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'Texas'
+  CALL insert_incident_sp('2022-10-17', 'ADDISON', 'Texas'
     ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'No Cloud', 1)
 "
 
@@ -475,7 +508,7 @@ while(dbMoreResults(mySQLConn) == TRUE) {
 
 ```{r NewAirport, warning=FALSE}
 sqlStatement = "
-  CALL insert_incident_sp('2000-10-17', 'JAX', 'California'
+  CALL insert_incident_sp('2022-10-17', 'JAX', 'California'
     ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'No Cloud', 1)
 "
 
@@ -490,7 +523,7 @@ while(dbMoreResults(mySQLConn) == TRUE) {
 ```{r exist_airport_but_incorrect_state, warning=FALSE}
 # Error message expected
 sqlStatement = "
-  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'California'
+  CALL insert_incident_sp('2022-10-17', 'ADDISON', 'California'
     ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'No Cloud', 1)
 "
 
@@ -509,7 +542,7 @@ while(dbMoreResults(mySQLConn) == TRUE) {
 
 ```{r NewAirline, warning=FALSE}
 sqlStatement = "
-  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'Texas'
+  CALL insert_incident_sp('2022-10-17', 'ADDISON', 'Texas'
     ,'STARSHIP', 'Airplane', 'landing', 200, 'No Cloud', 1)
 "
 rs = dbSendQuery(mySQLConn, sqlStatement)
@@ -522,7 +555,7 @@ while(dbMoreResults(mySQLConn) == TRUE) {
 
 ```{r NewCondition, warning=FALSE}
 sqlStatement = "
-  CALL insert_incident_sp('2000-10-17', 'ADDISON', 'Texas'
+  CALL insert_incident_sp('2022-10-17', 'ADDISON', 'Texas'
       ,'UNITED AIRLINES', 'Airplane', 'landing', 200, 'Hurricane', 1)
 "
 rs = dbSendQuery(mySQLConn, sqlStatement)
@@ -535,7 +568,7 @@ while(dbMoreResults(mySQLConn) == TRUE) {
 
 Note that there are new origin, new airline and new condition in the result.
 ```{sql CheckResult, connection=mySQLConn}
-SELECT * FROM incidents where `dep.date` = '2000-10-17'
+SELECT * FROM incidents where `dep.date` = '2022-10-17'
 ```
 
 ## Disconnect from Database

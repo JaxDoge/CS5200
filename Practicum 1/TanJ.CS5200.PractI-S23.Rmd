@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     conditions VARCHAR(64),
     warned BOOLEAN,
     PRIMARY KEY (rid),
-    CONSTRAINT CHK_incident CHECK (`flight.phase` in ("takeoff", "landing", "inflight", "unknown") AND altitude > 0)
+    CONSTRAINT CHK_incident CHECK (`flight.phase` in ("takeoff", "landing", "inflight", "unknown") AND altitude >= 0)
 )
 ```
 
@@ -273,7 +273,8 @@ incidents <- incidents %>%
 
 Select required columns in the right order
 ```{r FinalShuffleIncidents, warning=FALSE}
-incidents <- incidents %>% select(rid, dep.date, origin, airline, aircraft, flight.phase, altitude, conditions, warned)
+incidents <- incidents %>% 
+  select(rid, dep.date, origin, airline, aircraft, flight.phase, altitude, conditions, warned)
 ```
 
 Write into MySQL table
@@ -281,6 +282,7 @@ Write into MySQL table
 dbWriteTable(mySQLConn, "incidents", incidents, overwrite = FALSE, 
              append = TRUE, row.names = FALSE)
 ```
+
 
 ## Show parts of each table
 1. airlines

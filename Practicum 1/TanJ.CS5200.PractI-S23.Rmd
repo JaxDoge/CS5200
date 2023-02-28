@@ -14,9 +14,8 @@ p_load(tidyverse)
 p_load(lubridate)
 ```
 
-```{r connectToAWSRDSMySQLDatabase}
+```{r connectToAWSRDSMySQLDatabase, warning=FALSE}
 db_cred <- yaml::read_yaml('dbconfig.yml')
-# Obviously not a good practice to exposure my credential, only for pedagogical purpose
 db_user <- db_cred$db_user
 db_password <- db_cred$db_password
 db_name <- db_cred$db_name
@@ -131,11 +130,13 @@ FROM
   INFORMATION_SCHEMA.KEY_COLUMN_USAGE
 WHERE TABLE_NAME = 'incidents'
 ```
-
+```{sql IncidentsDescribe, connection=mySQLConn, eval = FALSE}
+DESCRIBE incidents
+```
 
 ## Check the BirdStrikesData
-```{r Check the structure of orginal dataset, warning=FALSE}
-df_raw <- read.csv(file = "BirdStrikesData-V2.csv",
+```{r LoadCSVFile, warning=FALSE}
+bds.raw <- read.csv(file = "BirdStrikesData-V2.csv",
                    header = T,
                    stringsAsFactors = F)
 
@@ -151,7 +152,7 @@ df_raw <- read.csv(file = "BirdStrikesData-V2.csv",
   e. convert date to Date data type
   f. convert warned data type to Boolean.
 ```{r preprocessing, warning=FALSE}
-df_refine <- df_raw %>% 
+df_refine <- bds.raw %>% 
   rename(., rid = ï..rid) %>%
   rename(., dep.date = flight_date) %>% 
   rename(., flight.phase = flight_phase) %>% 
@@ -354,7 +355,7 @@ JOIN `airlines` t4
 ON t3.airline = t4.eid
 ```
 
-#### 10 Create a SQL query against your database to find the number of bird strike incidents by month and by flight phase (across all years).
+#### Create a SQL query against your database to find the number of bird strike incidents by month and by flight phase (across all years).
 ```{r Q10, warning=FALSE}
 sqlStatement <- "
 
@@ -368,7 +369,7 @@ bs = dbGetQuery(mySQLConn, sqlStatement)
 head(bs, 6)
 ```
 
-#### 11 Plot
+#### Plot
 ```{r Q11, warning=FALSE}
 bs.mod <- bs %>%  
   group_by(month) %>%  
@@ -381,7 +382,7 @@ ggplot(bs.mod, aes(x=month, y=number)) +
 ```
 
 
-#### 12 Create a stored procedure in MySQL that adds a new incident to the database.
+#### Create a stored procedure in MySQL that adds a new incident to the database.
 ```{sql DropInsertIncidentsProcedure, connection=mySQLConn}
 DROP PROCEDURE IF EXISTS insert_incident_sp
 ```

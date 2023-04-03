@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE log [
+ <!ELEMENT log (Page*, Visitor*, Visit*)>
+ <!ELEMENT Page (url)>
+ <!ATTLIST Page pid ID #REQUIRED>
+ <!ELEMENT url (#PCDATA)>
+
+ <!ELEMENT Visitor (ip)>
+ <!ATTLIST Visitor vid ID #REQUIRED>
+ <!ELEMENT ip (#PCDATA)>
+
+ <!ELEMENT Visit (vdate, vtime)>
+ <!ATTLIST Visit tid ID #REQUIRED>
+ <!ATTLIST Visit pid IDREF #REQUIRED>
+ <!ATTLIST Visit vid IDREF #REQUIRED>
+ <!ELEMENT vdate (#PCDATA)>
+ <!ELEMENT vtime (#PCDATA)>
+]>
+
+<log>
+    <Page pid="P1">
+        <url>http://artificium.us/lessons/l101.html</url>
+    </Page>
+    <Page pid="P2">
+        <url>http://articificum.us/courses/cs1100.html</url>
+    </Page>
+    <Visitor vid="V1">
+        <ip>192.168.1.1</ip>
+    </Visitor>
+    <Visitor vid="V2">
+        <ip>165.11.33.45</ip>
+    </Visitor>
+    <Visit tid="T1" pid="P1" vid="V1">
+        <vdate>2023-04-01</vdate>
+        <vtime>15:30:00</vtime>
+    </Visit>
+    <Visit tid="T2" pid="P2" vid="V1">
+        <vdate>2023-03-29</vdate>
+        <vtime>20:30:00</vtime>
+    </Visit>
+    <Visit tid="T3" pid="P2" vid="V2">
+        <vdate>2023-03-28</vdate>
+        <vtime>20:00:00</vtime>
+    </Visit>    
+</log>
+

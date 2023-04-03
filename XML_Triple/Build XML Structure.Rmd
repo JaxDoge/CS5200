@@ -1,0 +1,27 @@
+---
+title: 'DO: Build XML Structure'
+author: "Jiaxing Tan"
+date: "2023-04-02"
+output: html_document
+---
+
+```{r}
+library(pacman)
+p_load(XML)
+```
+
+
+```{r}
+xmlURL <- "visitlog.xml"
+xmlObj <- xmlParse(xmlURL)
+root <- xmlRoot(xmlObj)
+```
+
+## Question 2
+How many times has P2 been visited
+```{r}
+xPS <- "count(//log/Visit[@pid='P2'])"
+res <- xpathSApply(xmlObj, xPS, xmlValue)
+res
+```
+

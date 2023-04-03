@@ -1,0 +1,273 @@
+---
+title: "Store XML in a Database"
+author: "Jiaxing Tan"
+date: "2023-04-03"
+output: html_document
+---
+
+## Questions 1
+Create a normalized (BCNF) relational schema and visualize the schema in an ERD (in Crow's Feet/IE Notation)
+```{r}
+knitr::include_url("https://i.imgur.com/N6YoLIVl.jpg")
+```
+
+
+## Question 2
+Create a SQLite database that implements the schema, i.e., define the tables with CREATE TABLE. Use SQL chunks in your R Notebook.
+
+```{r}
+library(pacman)
+p_load(RSQLite)
+p_load(XML)
+p_load(tidyverse)
+```
+
+```{r}
+conn <- dbConnect(RSQLite::SQLite(), "Books.db")
+```
+
+```{sql connection=conn}
+DROP TABLE IF EXISTS Authors
+```
+
+```{sql connection=conn}
+Create Table IF NOT Exists Authors (
+  authorId Integer PRIMARY KEY,
+  lastName Text NOT NULL,
+  firstName Text NOT NULL
+)
+```
+
+
+```{sql connection=conn}
+DROP TABLE IF EXISTS Genres
+```
+
+```{sql connection=conn}
+Create Table IF NOT Exists Genres (
+  genreId Integer PRIMARY KEY,
+  genreName Text NOT NULL
+)
+```
+
+
+```{sql connection=conn}
+DROP TABLE IF EXISTS Books
+```
+
+```{sql connection=conn}
+Create Table IF NOT Exists Books (
+  bid Text PRIMARY KEY,
+  title Text NOT NULL,
+  edition Text,
+  authorId INTEGER,
+  genreId INTEGER NOT NULL,
+  price REAL NOT NULL,
+  publishDate Text NOT NULL,
+  description Text NOT NULL,
+  FOREIGN KEY (authorId) 
+   REFERENCES Authors (authorId),
+  FOREIGN KEY (genreId) 
+   REFERENCES Genres (genreId)
+)
+```
+
+
+## Question 3
+Load the XML data from the file into R data frames;
+
+```{r}
+xmlURL <- "Books-v3.xml"
+xmlObj <- xmlParse(xmlURL)
+root <- xmlRoot(xmlObj)
+```
+
+```{r}
+n <- xmlSize(root)
+books <- xpathSApply(xmlObj, "//book")
+```
+
+### Extra all authors
+```{r}
+authors <- new.env()
+
+for (i in 1:n) {
+  aBook <- books[[i]]
+  author <- xpathSApply(aBook, 
+                       "./author",
+                       xmlValue)
+  authors[[author]] <- 1
+}
+
+
+authorDFOrgn <- data.frame(author = names(authors))
+authorDFOrgn <- tibble::rowid_to_column(authorDFOrgn, "authorId")
+authorDF <- authorDFOrgn %>% separate_wider_delim(author, ", ", 
+                                              names = c("lastName", "firstName"))
+```
+
+### Extra all genres
+```{r}
+genres <- new.env()
+
+for (i in 1:n) {
+  aBook <- books[[i]]
+  genre <- xpathSApply(aBook, 
+                       "./genre",
+                       xmlValue)
+  genres[[genre]] <- 1
+}
+
+
+genreDF <- data.frame(genreName = names(genres)) %>% 
+  tibble::rowid_to_column(., "genreId")
+
+```
+
+### Construct Books table
+```{r}
+booksDF <- data.frame(bid = character(n), title = character(n), 
+                      edition = character(n), 
+                      author = character(n), genre = character(n),
+                      price = numeric(n), publishDate = character(n),
+                      description = character(n))
+
+for (i in 1:n) {
+  aBook <- books[[i]]
+  bid <- xpathSApply(aBook, "./@id")
+  author <- xpathSApply(aBook, "./author", xmlValue)
+  title <- xpathSApply(aBook, "./title", xmlValue)
+  edition <- xpathSApply(aBook, "./edition", xmlValue)
+  if (length(edition) == 0) edition <- NA
+  
+  genre <- xpathSApply(aBook, "./genre", xmlValue)
+  price <- xpathSApply(aBook, "./price", xmlValue)
+  publishDate <- xpathSApply(aBook, "./publish_date", xmlValue)
+  description <- xpathSApply(aBook, "./description", xmlValue)
+  
+  booksDF[i,"bid"] <- bid
+  booksDF[i,"title"] <- title
+  booksDF[i,"edition"] <- edition
+  booksDF[i,"author"] <- author
+  booksDF[i,"genre"] <- genre
+  booksDF[i,"price"] <- as.numeric(price)
+  booksDF[i,"publishDate"] <- publishDate
+  booksDF[i,"description"] <- description
+  
+}
+```
+
+### Replace foreign keys
+```{r}
+booksDF <- booksDF %>% 
+  left_join(., authorDFOrgn, 
+            by = c("author"), keep = FALSE) %>% 
+  select(., -author) %>% 
+  relocate(authorId, .after = edition)
+```
+
+```{r}
+booksDF <- booksDF %>% 
+  left_join(., genreDF, 
+            by = c("genre" = "genreName"), keep = FALSE) %>% 
+  select(., -genre) %>% 
+  relocate(genreId, .after = authorId)
+```
+
+
+## Question 4
+Transform data types as necessary and then save the data frames to the appropriate tables in the database using a strategy of your choice
+
+```{r}
+dbWriteTable(conn, "Authors", authorDF, overwrite = FALSE, 
+             append = TRUE, row.names = FALSE)
+```
+
+```{r}
+dbWriteTable(conn, "Genres", genreDF, overwrite = FALSE, 
+             append = TRUE, row.names = FALSE)
+```
+
+```{r}
+dbWriteTable(conn, "Books", booksDF, overwrite = FALSE, 
+             append = TRUE, row.names = FALSE)
+```
+
+
+```{sql connection=conn}
+SELECT * FROM Books
+```
+
+## Question 5
+Once the data from the XML is in the database, build SQL chunks for the following queries against the SQLite database
+
+### A
+What is the number of genres have at least three books?
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT genreId, count(1) as tally 
+  FROM Books
+  GROUP BY genreId
+)
+
+SELECT count(1) as genre_tally
+FROM t1
+WHERE tally >= 3
+```
+
+### B
+What is the oldest year in which a publication was published?
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT SUBSTR(publishDate,1,4) as pub_year
+  FROM Books
+)
+
+SELECT min(pub_year) as oldest_year
+FROM t1
+```
+
+### C
+Find the number of books and average price for each genre.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT genreId, count(1) as book_tally, AVG(price) as avg_price
+  FROM Books
+  GROUP BY genreId
+)
+
+SELECT t2.genreName, book_tally, avg_price
+FROM t1
+JOIN Genres t2
+ON t1.genreId = t2.genreId 
+```
+
+### D
+List the title and author of all books that are less than 0.8\*AVG or more than 1.2\*AVG, where AVG is the average price of all books.
+```{sql connection=conn}
+WITH t1 AS (
+  SELECT title, authorId, price, AVG(price) over() as avg_price
+  FROM Books
+  )
+,t2 AS (
+  SELECT *
+  FROM t1
+  WHERE price < avg_price * 0.8
+     OR price > avg_price * 1.2
+)
+
+SELECT title, firstName, lastName, price, avg_price
+FROM t2
+JOIN Authors t3
+ON t2.authorId = t3.authorId 
+
+```
+
+
+
+
+
+```{r}
+dbDisconnect(conn)
+```
+
